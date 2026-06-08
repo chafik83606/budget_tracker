@@ -36,9 +36,7 @@ workflows:
           echo "Uploading $IPA_PATH to App Store Connect..."
           app-store-connect publish \
             --path "$IPA_PATH" \
-            --altool-verbose-logging \
-            --max-find-build-wait 0 \
-            --max-build-processing-wait 0
+            --altool-verbose-logging
 
     artifacts:
       - build/ios/ipa/*.ipa
