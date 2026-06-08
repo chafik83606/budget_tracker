@@ -15,10 +15,16 @@ workflows:
         bundle_identifier: com.ctre2.budgettracker
 
     scripts:
+      - name: Set up code signing settings on Xcode project
+        script: xcode-project use-profiles
       - name: Install dependencies
-        script: flutter pub get
+        script: |
+          flutter pub get
+          find . -name "Podfile" -execdir pod install \;
       - name: Build iOS IPA
-        script: flutter build ipa --release
+        script: |
+          flutter build ipa --release \
+            --export-options-plist=$HOME/export_options.plist
 
     artifacts:
       - build/ios/ipa/*.ipa
