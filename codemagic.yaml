@@ -19,8 +19,8 @@ workflows:
         script: xcode-project use-profiles
       - name: Install dependencies
         script: |
+          flutter config --no-enable-swift-package-manager
           flutter pub get
-          find . -name "Podfile" -execdir pod install \;
       - name: Build iOS IPA
         script: |
           flutter build ipa --release \
