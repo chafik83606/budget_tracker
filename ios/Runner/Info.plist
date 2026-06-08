@@ -28,6 +28,10 @@
 	<true/>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
+	<key>NSCameraUsageDescription</key>
+	<string>Budget Tracker utilise l'appareil photo pour scanner vos tickets de caisse et détecter automatiquement vos dépenses.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Budget Tracker accède à vos photos pour analyser un ticket ou un reçu et remplir vos dépenses automatiquement.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

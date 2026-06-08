@@ -25,6 +25,20 @@ workflows:
         script: |
           flutter build ipa --release \
             --export-options-plist=$HOME/export_options.plist
+      - name: Upload to App Store Connect
+        script: |
+          set -e
+          IPA_PATH=$(find build/ios/ipa -name "*.ipa" | head -1)
+          if [ -z "$IPA_PATH" ]; then
+            echo "ERROR: No IPA found in build/ios/ipa"
+            exit 1
+          fi
+          echo "Uploading $IPA_PATH to App Store Connect..."
+          app-store-connect publish \
+            --path "$IPA_PATH" \
+            --altool-verbose-logging \
+            --max-find-build-wait 0 \
+            --max-build-processing-wait 0
 
     artifacts:
       - build/ios/ipa/*.ipa
@@ -37,6 +51,3 @@ workflows:
         notify:
           success: true
           failure: true
-      app_store_connect:
-        auth: integration
-        submit_to_testflight: true
