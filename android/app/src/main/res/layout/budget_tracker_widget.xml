@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="12dp"
+    android:background="@android:color/white">
+
+    <TextView
+        android:id="@+id/widget_month"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Budget Tracker"
+        android:textSize="12sp"
+        android:textColor="#666666" />
+
+    <TextView
+        android:id="@+id/widget_balance_label"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:text="Solde du mois"
+        android:textSize="11sp"
+        android:textColor="#888888" />
+
+    <TextView
+        android:id="@+id/widget_balance"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="—"
+        android:textSize="22sp"
+        android:textStyle="bold"
+        android:textColor="#3F51B5" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:orientation="horizontal">
+
+        <TextView
+            android:id="@+id/widget_incomes"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="—"
+            android:textSize="11sp"
+            android:textColor="#2E7D32" />
+
+        <TextView
+            android:id="@+id/widget_expenses"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:gravity="end"
+            android:text="—"
+            android:textSize="11sp"
+            android:textColor="#C62828" />
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/widget_add_button"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="10dp"
+        android:background="#3F51B5"
+        android:gravity="center"
+        android:padding="8dp"
+        android:text="+ Ajouter une dépense"
+        android:textColor="@android:color/white"
+        android:textSize="12sp"
+        android:textStyle="bold" />
+
+</LinearLayout>
