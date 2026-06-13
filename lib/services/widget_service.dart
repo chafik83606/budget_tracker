@@ -1,3 +1,5 @@
+import 'dart:io' show Platform;
+
 import 'package:home_widget/home_widget.dart';
 import 'package:intl/intl.dart';
 
@@ -13,7 +15,10 @@ class WidgetService {
   static const String keyExpenses = 'expenses';
   static const String keyMonth = 'month_label';
 
+  bool get _isSupported => !Platform.isIOS;
+
   Future<void> initialize() async {
+    if (!_isSupported) return;
     try {
       await HomeWidget.setAppGroupId('group.budget_tracker.widget');
     } catch (_) {}
@@ -26,6 +31,8 @@ class WidgetService {
     required int year,
     required int month,
   }) async {
+    if (!_isSupported) return;
+
     const monthNames = [
       'janvier',
       'fevrier',
@@ -44,14 +51,19 @@ class WidgetService {
     final fmt = NumberFormat.currency(locale: 'fr_FR', symbol: '€');
     final monthLabel = '${monthNames[month - 1]} $year';
 
-    await HomeWidget.saveWidgetData<String>(keyBalance, fmt.format(balance));
-    await HomeWidget.saveWidgetData<String>(keyIncomes, fmt.format(incomes));
-    await HomeWidget.saveWidgetData<String>(keyExpenses, fmt.format(expenses));
-    await HomeWidget.saveWidgetData<String>(keyMonth, monthLabel);
+    try {
+      await HomeWidget.saveWidgetData<String>(keyBalance, fmt.format(balance));
+      await HomeWidget.saveWidgetData<String>(keyIncomes, fmt.format(incomes));
+      await HomeWidget.saveWidgetData<String>(
+        keyExpenses,
+        fmt.format(expenses),
+      );
+      await HomeWidget.saveWidgetData<String>(keyMonth, monthLabel);
 
-    await HomeWidget.updateWidget(
-      androidName: androidWidgetName,
-      iOSName: iosWidgetName,
-    );
+      await HomeWidget.updateWidget(
+        androidName: androidWidgetName,
+        iOSName: iosWidgetName,
+      );
+    } catch (_) {}
   }
 }

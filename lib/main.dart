@@ -1,6 +1,7 @@
 ﻿import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/date_symbol_data_local.dart';
+import 'dart:io' show Platform;
 import 'package:home_widget/home_widget.dart';
 import 'providers/budget_provider.dart';
 import 'screens/home_screen.dart';
@@ -75,12 +76,14 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _checkLock();
-    _checkWidgetLaunch();
-    HomeWidget.widgetClicked.listen((uri) {
-      if (uri?.host == 'add' && mounted) {
-        _openAddFromWidget();
-      }
-    });
+    if (Platform.isAndroid) {
+      _checkWidgetLaunch();
+      HomeWidget.widgetClicked.listen((uri) {
+        if (uri?.host == 'add' && mounted) {
+          _openAddFromWidget();
+        }
+      });
+    }
   }
 
   @override

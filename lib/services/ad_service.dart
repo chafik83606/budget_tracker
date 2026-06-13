@@ -16,8 +16,12 @@ class AdService {
 
   Future<void> initialize() async {
     if (_initialized) return;
-    await MobileAds.instance.initialize();
-    _initialized = true;
+    try {
+      await MobileAds.instance.initialize();
+      _initialized = true;
+    } catch (e) {
+      debugPrint('AdMob init failed: $e');
+    }
   }
 
   String get interstitialAdUnitId {

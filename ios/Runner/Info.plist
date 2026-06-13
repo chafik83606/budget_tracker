@@ -28,6 +28,8 @@
 	<true/>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
+	<key>GADApplicationIdentifier</key>
+	<string>ca-app-pub-3940256099942544~3347511713</string>
 	<key>NSCameraUsageDescription</key>
 	<string>Budget Tracker utilise l'appareil photo pour scanner vos tickets de caisse et détecter automatiquement vos dépenses.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
