@@ -35,6 +35,7 @@ class BudgetTrackerApp extends StatelessWidget {
       builder: (context, provider, _) {
         return MaterialApp(
           title: 'Budget Tracker',
+          locale: const Locale('fr', 'FR'),
           debugShowCheckedModeBanner: false,
           themeMode: (provider.isPro && provider.isDarkTheme)
               ? ThemeMode.dark
