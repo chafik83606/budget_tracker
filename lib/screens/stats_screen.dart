@@ -34,10 +34,26 @@ class _StatsScreenState extends State<StatsScreen> {
   Map<int, double>? _expensesByCategory;
   List<Map<String, dynamic>>? _monthlyTotals;
   int _touchedIndex = -1;
+  BudgetProvider? _provider;
 
   @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _provider = context.read<BudgetProvider>();
+      _provider!.addListener(_onProviderChanged);
+      _loadData();
+    });
+  }
+
+  @override
+  void dispose() {
+    _provider?.removeListener(_onProviderChanged);
+    super.dispose();
+  }
+
+  void _onProviderChanged() {
+    if (_provider?.isLoading ?? true) return;
     _loadData();
   }
 

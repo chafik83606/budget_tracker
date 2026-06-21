@@ -69,6 +69,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 _UpgradeProCard(
                   provider: provider,
                   onPurchase: () => _buyPro(provider),
+                  onRestore: () => _restoreProPurchase(provider),
                 ),
 
               // ── APPARENCE ────────────────────────────────────────────────
@@ -479,6 +480,28 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
+  Future<void> _restoreProPurchase(BudgetProvider provider) async {
+    try {
+      if (!await PurchaseService.instance.isAvailable()) {
+        throw Exception('Achats in-app non disponibles sur cet appareil.');
+      }
+      await PurchaseService.instance.restorePurchases();
+      if (!mounted) return;
+      if (provider.isPro) {
+        _showMessage('Budget Tracker Pro restauré !');
+      } else {
+        _showMessage(
+          'Restauration lancée. Si vous avez déjà acheté Pro, '
+          'patientez quelques secondes.',
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      final message = e.toString().replaceFirst('Exception: ', '');
+      _showError(context, message);
+    }
+  }
+
   Future<void> _buyPro(BudgetProvider provider) async {
     if (_isPurchasing) return;
     setState(() {
@@ -555,7 +578,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
 class _UpgradeProCard extends StatelessWidget {
   final BudgetProvider provider;
   final VoidCallback onPurchase;
-  const _UpgradeProCard({required this.provider, required this.onPurchase});
+  final VoidCallback onRestore;
+  const _UpgradeProCard({
+    required this.provider,
+    required this.onPurchase,
+    required this.onRestore,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -611,6 +639,14 @@ class _UpgradeProCard extends StatelessWidget {
                 style: FilledButton.styleFrom(
                   backgroundColor: Colors.amber.shade700,
                 ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            SizedBox(
+              width: double.infinity,
+              child: TextButton(
+                onPressed: onRestore,
+                child: const Text('Restaurer mon achat'),
               ),
             ),
           ],

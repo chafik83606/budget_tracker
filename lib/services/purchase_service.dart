@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:in_app_purchase/in_app_purchase.dart';
 
 class PurchaseService {
@@ -7,8 +9,10 @@ class PurchaseService {
   static const String proProductId = 'budget_tracker_pro';
   final Set<String> _productIds = {proProductId};
 
+  StreamSubscription<List<PurchaseDetails>>? _subscription;
+
   Future<bool> isAvailable() async {
-    return await InAppPurchase.instance.isAvailable();
+    return InAppPurchase.instance.isAvailable();
   }
 
   Future<List<ProductDetails>> fetchProducts() async {
@@ -24,5 +28,33 @@ class PurchaseService {
   Future<void> buyPro(ProductDetails productDetails) async {
     final purchaseParam = PurchaseParam(productDetails: productDetails);
     await InAppPurchase.instance.buyNonConsumable(purchaseParam: purchaseParam);
+  }
+
+  void listen(void Function(PurchaseDetails purchase) onProUnlocked) {
+    _subscription?.cancel();
+    _subscription = InAppPurchase.instance.purchaseStream.listen((purchases) {
+      for (final purchase in purchases) {
+        if (purchase.productID != proProductId) continue;
+
+        if (purchase.status == PurchaseStatus.purchased ||
+            purchase.status == PurchaseStatus.restored) {
+          onProUnlocked(purchase);
+        }
+
+        if (purchase.pendingCompletePurchase) {
+          InAppPurchase.instance.completePurchase(purchase);
+        }
+      }
+    });
+  }
+
+  Future<void> restorePurchases() async {
+    if (!await isAvailable()) return;
+    await InAppPurchase.instance.restorePurchases();
+  }
+
+  void dispose() {
+    _subscription?.cancel();
+    _subscription = null;
   }
 }

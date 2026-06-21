@@ -11,6 +11,7 @@ import 'screens/add_transaction_screen.dart';
 import 'screens/lock_screen.dart';
 import 'services/ad_service.dart';
 import 'services/lock_service.dart';
+import 'services/purchase_service.dart';
 import 'services/widget_service.dart';
 
 void main() async {
@@ -77,6 +78,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _checkLock();
+    _initPurchases();
     if (Platform.isAndroid) {
       _checkWidgetLaunch();
       HomeWidget.widgetClicked.listen((uri) {
@@ -89,8 +91,28 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
 
   @override
   void dispose() {
+    PurchaseService.instance.dispose();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
+  }
+
+  Future<void> _initPurchases() async {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+      final provider = context.read<BudgetProvider>();
+      while (provider.isLoading && mounted) {
+        await Future.delayed(const Duration(milliseconds: 50));
+      }
+      if (!mounted) return;
+
+      PurchaseService.instance.listen((_) async {
+        await provider.setPro(true);
+      });
+
+      if (!provider.isPro) {
+        await PurchaseService.instance.restorePurchases();
+      }
+    });
   }
 
   @override
