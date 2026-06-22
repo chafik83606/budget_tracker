@@ -7,6 +7,7 @@ import '../services/database_service.dart';
 import '../services/preferences_service.dart';
 import '../services/recurring_service.dart';
 import '../services/widget_service.dart';
+import '../services/auto_backup_service.dart';
 
 class BudgetProvider extends ChangeNotifier {
   final DatabaseService _db = DatabaseService();
@@ -74,6 +75,16 @@ class BudgetProvider extends ChangeNotifier {
     await loadRecurringTransactions();
     await loadTransactions();
     await loadSavingsGoal();
+
+    final restored = await AutoBackupService.instance.tryRestoreLatestIfEmpty();
+    if (restored) {
+      await loadCategories();
+      await loadRecurringTransactions();
+      await loadTransactions();
+      await loadSavingsGoal();
+    }
+
+    await AutoBackupService.instance.runDailyBackupIfNeeded();
 
     _isLoading = false;
     notifyListeners();

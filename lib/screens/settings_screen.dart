@@ -3,10 +3,12 @@ import 'dart:async';
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:in_app_purchase/in_app_purchase.dart';
+import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../providers/budget_provider.dart';
 import '../models/category.dart';
 import '../services/export_service.dart';
+import '../services/auto_backup_service.dart';
 import '../services/purchase_service.dart';
 import '../services/lock_service.dart';
 import 'recurring_transactions_screen.dart';
@@ -26,6 +28,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _lockEnabled = false;
   bool _biometricEnabled = false;
   bool _biometricAvailable = false;
+  AutoBackupStatus? _autoBackupStatus;
 
   @override
   void initState() {
@@ -35,6 +38,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
       onError: (_) {},
     );
     _loadLockState();
+    _loadAutoBackupStatus();
+  }
+
+  Future<void> _loadAutoBackupStatus() async {
+    final status = await AutoBackupService.instance.getStatus();
+    if (mounted) {
+      setState(() => _autoBackupStatus = status);
+    }
   }
 
   Future<void> _loadLockState() async {
@@ -243,6 +254,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
               // ── SAUVEGARDE ──────────────────────────────────────────────────
               _SectionHeader(title: 'Sauvegarde'),
               ListTile(
+                leading: const Icon(Icons.schedule),
+                title: const Text('Sauvegarde automatique'),
+                subtitle: Text(_autoBackupSubtitle()),
+              ),
+              if (_autoBackupStatus?.hasTodayFile ?? false)
+                ListTile(
+                  leading: const Icon(Icons.today),
+                  title: const Text('Restaurer la sauvegarde d\'aujourd\'hui'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => _restoreAutoBackup(context, provider, today: true),
+                ),
+              if (_autoBackupStatus?.hasYesterdayFile ?? false)
+                ListTile(
+                  leading: const Icon(Icons.history),
+                  title: const Text('Restaurer la sauvegarde d\'hier'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => _restoreAutoBackup(context, provider, today: false),
+                ),
+              ListTile(
                 leading: const Icon(Icons.backup),
                 title: const Text('Sauvegarder les données'),
                 subtitle: provider.isPro
@@ -401,6 +431,68 @@ class _SettingsScreenState extends State<SettingsScreen> {
       );
     } catch (e) {
       if (context.mounted) _showError(context, 'Erreur lors de l\'export PDF');
+    }
+  }
+
+  String _autoBackupSubtitle() {
+    final status = _autoBackupStatus;
+    if (status == null) {
+      return '1 sauvegarde par jour (aujourd\'hui + hier, max. 2 fichiers)';
+    }
+    if (status.lastBackupDate != null) {
+      final date = DateFormat('dd/MM/yyyy').format(status.lastBackupDate!);
+      return 'Dernière : $date — 2 copies max., les anciennes sont écrasées';
+    }
+    return '1 sauvegarde par jour (aujourd\'hui + hier, max. 2 fichiers)';
+  }
+
+  Future<void> _restoreAutoBackup(
+    BuildContext context,
+    BudgetProvider provider, {
+    required bool today,
+  }) async {
+    final label = today ? 'd\'aujourd\'hui' : 'd\'hier';
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Restaurer la sauvegarde $label ?'),
+        content: const Text(
+          'Vos données actuelles seront remplacées par celles de la sauvegarde.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Annuler'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Restaurer'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !context.mounted) return;
+
+    try {
+      final success = today
+          ? await AutoBackupService.instance.restoreToday()
+          : await AutoBackupService.instance.restoreYesterday();
+      if (!context.mounted) return;
+      if (success) {
+        await provider.initialize();
+        await _loadAutoBackupStatus();
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Sauvegarde $label restaurée')),
+          );
+        }
+      } else {
+        _showError(context, 'Sauvegarde introuvable');
+      }
+    } catch (e) {
+      if (context.mounted) {
+        _showError(context, 'Erreur lors de la restauration');
+      }
     }
   }
 
@@ -627,7 +719,8 @@ class _UpgradeProCard extends StatelessWidget {
             const Text('✅ Graphiques avancés'),
             const Text('✅ Historique illimité'),
             const Text('✅ Thème sombre'),
-            const Text('✅ Sauvegarde chiffrée'),
+            const Text('✅ Sauvegarde automatique quotidienne'),
+            const Text('✅ Sauvegarde chiffrée (export)'),
             const Text('✅ Sans publicités'),
             const SizedBox(height: 16),
             SizedBox(

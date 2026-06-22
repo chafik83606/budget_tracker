@@ -1,6 +1,5 @@
 import 'dart:convert';
 import 'dart:io';
-import 'package:encrypt/encrypt.dart' as enc;
 import 'package:path_provider/path_provider.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:share_plus/share_plus.dart';
@@ -9,16 +8,13 @@ import 'package:pdf/widgets.dart' as pw;
 import 'package:csv/csv.dart';
 import '../models/transaction.dart';
 import '../models/category.dart';
+import 'backup_crypto.dart';
 import 'database_service.dart';
 
 class ExportService {
   static final ExportService _instance = ExportService._internal();
   factory ExportService() => _instance;
   ExportService._internal();
-
-  // Clé de chiffrement (32 chars = AES-256)
-  static const String _encryptionKey = 'BudgetTracker2024SecureKey123456';
-  static const String _encryptionIV = 'BudgetTrackerIV1';
 
   final DatabaseService _db = DatabaseService();
 
@@ -125,16 +121,11 @@ class ExportService {
 
   Future<void> backupData() async {
     final data = await _db.exportAllData();
-    final jsonStr = jsonEncode(data);
-
-    final key = enc.Key.fromUtf8(_encryptionKey);
-    final iv = enc.IV.fromUtf8(_encryptionIV);
-    final encrypter = enc.Encrypter(enc.AES(key));
-    final encrypted = encrypter.encrypt(jsonStr, iv: iv);
+    final encrypted = BackupCrypto.encryptJson(data);
 
     final dir = await getApplicationDocumentsDirectory();
     final file = File('${dir.path}/budget_backup.btk');
-    await file.writeAsBytes(encrypted.bytes);
+    await file.writeAsBytes(encrypted);
 
     await Share.shareXFiles([
       XFile(file.path),
@@ -153,13 +144,7 @@ class ExportService {
 
     final file = File(result.files.single.path!);
     final encryptedBytes = await file.readAsBytes();
-
-    final key = enc.Key.fromUtf8(_encryptionKey);
-    final iv = enc.IV.fromUtf8(_encryptionIV);
-    final encrypter = enc.Encrypter(enc.AES(key));
-    final decrypted = encrypter.decrypt(enc.Encrypted(encryptedBytes), iv: iv);
-
-    final data = jsonDecode(decrypted) as Map<String, dynamic>;
+    final data = BackupCrypto.decryptToMap(encryptedBytes);
     await _db.importAllData(data);
     return true;
   }

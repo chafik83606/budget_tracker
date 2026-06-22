@@ -8,6 +8,7 @@ class PreferencesService {
   static const String _keyIsPro = 'is_pro';
   static const String _keyDarkTheme = 'dark_theme';
   static const String _keyAddCount = 'add_count';
+  static const String _keyLastAutoBackupDate = 'last_auto_backup_date';
 
   // ─── STATUT PRO ──────────────────────────────────────────────────────────
 
@@ -50,5 +51,17 @@ class PreferencesService {
   Future<void> resetAddCount() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt(_keyAddCount, 0);
+  }
+
+  // ─── SAUVEGARDE AUTO ─────────────────────────────────────────────────────
+
+  Future<String?> getLastAutoBackupDate() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_keyLastAutoBackupDate);
+  }
+
+  Future<void> setLastAutoBackupDate(String dateKey) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_keyLastAutoBackupDate, dateKey);
   }
 }

@@ -105,8 +105,6 @@ class DatabaseService {
     ''');
   }
 
-  // ─── CATEGORIES ──────────────────────────────────────────────────────────
-
   Future<List<Category>> getCategories() async {
     final db = await database;
     final maps = await db.query('categories', orderBy: 'name ASC');
@@ -375,6 +373,12 @@ class DatabaseService {
   }
 
   // ─── SAUVEGARDE / RESTAURATION ────────────────────────────────────────────
+
+  Future<int> getTransactionCount() async {
+    final db = await database;
+    final result = await db.rawQuery('SELECT COUNT(*) AS c FROM transactions');
+    return Sqflite.firstIntValue(result) ?? 0;
+  }
 
   Future<Map<String, dynamic>> exportAllData() async {
     final db = await database;
