@@ -2,26 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:intl/intl.dart';
+import '../utils/date_formatters.dart';
+import '../l10n/app_strings.dart';
 import '../providers/budget_provider.dart';
-
-const List<String> _frMonthNames = [
-  'janvier',
-  'fevrier',
-  'mars',
-  'avril',
-  'mai',
-  'juin',
-  'juillet',
-  'aout',
-  'septembre',
-  'octobre',
-  'novembre',
-  'decembre',
-];
-
-String _formatFrenchMonthYear(DateTime date) {
-  return '${_frMonthNames[date.month - 1]} ${date.year}';
-}
+import '../services/pro_purchase_helper.dart';
 
 class StatsScreen extends StatefulWidget {
   const StatsScreen({super.key});
@@ -33,6 +17,7 @@ class StatsScreen extends StatefulWidget {
 class _StatsScreenState extends State<StatsScreen> {
   Map<int, double>? _expensesByCategory;
   List<Map<String, dynamic>>? _monthlyTotals;
+  Map<String, dynamic>? _monthComparison;
   int _touchedIndex = -1;
   BudgetProvider? _provider;
 
@@ -61,10 +46,12 @@ class _StatsScreenState extends State<StatsScreen> {
     final provider = context.read<BudgetProvider>();
     final expenses = await provider.getExpensesByCategory();
     final monthly = await provider.getMonthlyTotals();
+    final comparison = await provider.getMonthComparison();
     if (mounted) {
       setState(() {
         _expensesByCategory = expenses;
         _monthlyTotals = monthly;
+        _monthComparison = comparison;
       });
     }
   }
@@ -77,16 +64,24 @@ class _StatsScreenState extends State<StatsScreen> {
           appBar: AppBar(title: const Text('Statistiques'), centerTitle: true),
           body: _expensesByCategory == null
               ? const Center(child: CircularProgressIndicator())
-              : ListView(
-                  padding: const EdgeInsets.all(16),
-                  children: [
-                    // Titre section camembert
-                    _SectionTitle(
-                      title: 'Dépenses par catégorie',
-                      subtitle: _formatFrenchMonthYear(
-                        DateTime(provider.currentYear, provider.currentMonth),
+              : RefreshIndicator(
+                  onRefresh: _loadData,
+                  child: ListView(
+                    padding: const EdgeInsets.all(16),
+                    children: [
+                      if (_monthComparison != null) ...[
+                        _MonthComparisonCard(comparison: _monthComparison!),
+                        const SizedBox(height: 16),
+                      ],
+                      _SectionTitle(
+                        title: 'Dépenses par catégorie',
+                        subtitle: formatFrenchMonthYear(
+                          DateTime(
+                            provider.currentYear,
+                            provider.currentMonth,
+                          ),
+                        ),
                       ),
-                    ),
                     const SizedBox(height: 12),
 
                     // Camembert
@@ -109,6 +104,8 @@ class _StatsScreenState extends State<StatsScreen> {
                         title: 'Évolution mensuelle',
                         description:
                             'Visualisez vos dépenses sur 6 mois avec la version Pro.',
+                        onUpgrade: () =>
+                            ProPurchaseHelper.requestUpgrade(context, provider),
                       ),
                     ] else ...[
                       const _SectionTitle(title: 'Évolution sur 6 mois'),
@@ -132,6 +129,7 @@ class _StatsScreenState extends State<StatsScreen> {
                     ],
                   ],
                 ),
+              ),
         );
       },
     );
@@ -436,6 +434,54 @@ class _SectionTitle extends StatelessWidget {
   }
 }
 
+class _MonthComparisonCard extends StatelessWidget {
+  final Map<String, dynamic> comparison;
+
+  const _MonthComparisonCard({required this.comparison});
+
+  @override
+  Widget build(BuildContext context) {
+    final fmt = NumberFormat.currency(locale: 'fr_FR', symbol: '€');
+    final change = comparison['changePct'] as double;
+    final isUp = change > 0;
+    return Card(
+      color: Colors.blue.shade50,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          children: [
+            Icon(
+              isUp ? Icons.trending_up : Icons.trending_down,
+              color: isUp ? Colors.red : Colors.green,
+              size: 32,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Dépenses ${AppStrings.vsLastMonth}',
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  Text(
+                    '${isUp ? '+' : ''}${change.toStringAsFixed(1)} % '
+                    '(${fmt.format(comparison['current'])} vs ${fmt.format(comparison['previous'])})',
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: Colors.grey.shade700,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _EmptyChart extends StatelessWidget {
   final String message;
   const _EmptyChart({required this.message});
@@ -454,10 +500,12 @@ class _ProFeatureCard extends StatelessWidget {
   final IconData icon;
   final String title;
   final String description;
+  final VoidCallback onUpgrade;
   const _ProFeatureCard({
     required this.icon,
     required this.title,
     required this.description,
+    required this.onUpgrade,
   });
 
   @override
@@ -466,24 +514,40 @@ class _ProFeatureCard extends StatelessWidget {
       color: Colors.amber.shade50,
       child: Padding(
         padding: const EdgeInsets.all(16),
-        child: Row(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(icon, size: 36, color: Colors.amber.shade700),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: const TextStyle(fontWeight: FontWeight.bold),
+            Row(
+              children: [
+                Icon(icon, size: 36, color: Colors.amber.shade700),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        description,
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: Colors.grey.shade700,
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 4),
-                  Text(
-                    description,
-                    style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
-                  ),
-                ],
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton(
+                onPressed: onUpgrade,
+                child: const Text('Passer à Pro — 4,99 €'),
               ),
             ),
           ],

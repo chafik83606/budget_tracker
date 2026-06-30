@@ -10,7 +10,13 @@ import '../models/category.dart';
 import '../services/export_service.dart';
 import '../services/auto_backup_service.dart';
 import '../services/purchase_service.dart';
+import '../services/pro_purchase_helper.dart';
 import '../services/lock_service.dart';
+import '../services/notification_service.dart';
+import '../services/widget_pin_service.dart';
+import '../services/cloud_sync_service.dart';
+import '../services/preferences_service.dart';
+import '../l10n/app_strings.dart';
 import 'recurring_transactions_screen.dart';
 import 'import_data_screen.dart';
 import 'scan_receipt_screen.dart';
@@ -24,7 +30,6 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   StreamSubscription<List<PurchaseDetails>>? _purchaseSubscription;
-  bool _isPurchasing = false;
   bool _lockEnabled = false;
   bool _biometricEnabled = false;
   bool _biometricAvailable = false;
@@ -79,8 +84,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
               if (!provider.isPro)
                 _UpgradeProCard(
                   provider: provider,
-                  onPurchase: () => _buyPro(provider),
-                  onRestore: () => _restoreProPurchase(provider),
+                  onPurchase: () =>
+                      ProPurchaseHelper.buyPro(context, provider),
+                  onRestore: () =>
+                      ProPurchaseHelper.restorePro(context, provider),
                 ),
 
               // ── APPARENCE ────────────────────────────────────────────────
@@ -88,15 +95,49 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ListTile(
                 leading: const Icon(Icons.dark_mode),
                 title: const Text('Thème sombre'),
-                subtitle: provider.isPro
-                    ? null
-                    : const Text('Version Pro requise'),
                 trailing: Switch(
                   value: provider.isDarkTheme,
-                  onChanged: provider.isPro
-                      ? (v) => provider.setDarkTheme(v)
-                      : null,
+                  onChanged: (v) => provider.setDarkTheme(v),
                 ),
+              ),
+
+              // ── COMPTES ────────────────────────────────────────────────────
+              _SectionHeader(title: 'Comptes'),
+              ...provider.accounts.map(
+                (acc) => ListTile(
+                  leading: Text(acc.icon, style: const TextStyle(fontSize: 22)),
+                  title: Text(acc.name),
+                  trailing: provider.currentAccountId == acc.id
+                      ? Icon(Icons.check_circle, color: Colors.green.shade600)
+                      : null,
+                  onTap: () => provider.setCurrentAccount(acc.id!),
+                ),
+              ),
+
+              // ── NOTIFICATIONS ──────────────────────────────────────────────
+              _SectionHeader(title: 'Notifications'),
+              ListTile(
+                leading: const Icon(Icons.notifications_active_outlined),
+                title: const Text('Alertes budget (80 % / 100 %)'),
+                trailing: Switch(
+                  value: provider.budgetAlertsEnabled,
+                  onChanged: (v) async {
+                    if (v) {
+                      await NotificationService.instance.requestPermission();
+                    }
+                    await provider.setBudgetAlertsEnabled(v);
+                  },
+                ),
+              ),
+
+              // ── LANGUE ─────────────────────────────────────────────────────
+              _SectionHeader(title: 'Langue'),
+              ListTile(
+                leading: const Icon(Icons.language),
+                title: const Text('Langue de l\'application'),
+                subtitle: const Text('Français, English, العربية'),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => _pickLanguage(context),
               ),
 
               // ── CATÉGORIES ────────────────────────────────────────────────
@@ -107,7 +148,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   title: const Text('Gérer les catégories'),
                   subtitle: const Text('Version Pro requise'),
                   trailing: const Icon(Icons.lock, color: Colors.amber),
-                  onTap: () => _showProRequired(context, provider),
+                  onTap: () =>
+                      ProPurchaseHelper.requestUpgrade(context, provider),
                 )
               else
                 ListTile(
@@ -150,7 +192,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           builder: (_) => const ScanReceiptScreen(),
                         ),
                       )
-                    : () => _showProRequired(context, provider),
+                    : () => ProPurchaseHelper.requestUpgrade(context, provider),
               ),
               ListTile(
                 leading: const Icon(Icons.upload_file),
@@ -168,7 +210,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           builder: (_) => const ImportDataScreen(),
                         ),
                       )
-                    : () => _showProRequired(context, provider),
+                    : () => ProPurchaseHelper.requestUpgrade(context, provider),
               ),
 
               // ── SÉCURITÉ ─────────────────────────────────────────────────
@@ -217,16 +259,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 leading: const Icon(Icons.widgets),
                 title: const Text('Widget écran d\'accueil'),
                 subtitle: const Text(
-                  'Ajoutez le widget depuis l\'écran d\'accueil Android '
-                  '(appui long → Widgets → Budget Tracker)',
+                  'Ajoutez le widget sur votre écran d\'accueil Android',
                 ),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => _pinWidget(context),
               ),
 
               // ── EXPORT ────────────────────────────────────────────────────
               _SectionHeader(title: 'Export'),
               ListTile(
                 leading: const Icon(Icons.table_chart),
-                title: const Text('Exporter en CSV'),
+                title: const Text('Exporter CSV (mois courant)'),
+                subtitle: const Text('Gratuit — mois affiché'),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => _exportCurrentMonthCsv(context, provider),
+              ),
+              ListTile(
+                leading: const Icon(Icons.table_view),
+                title: const Text('Exporter CSV (historique complet)'),
                 subtitle: provider.isPro
                     ? null
                     : const Text('Version Pro requise'),
@@ -234,8 +284,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ? const Icon(Icons.chevron_right)
                     : const Icon(Icons.lock, color: Colors.amber),
                 onTap: provider.isPro
-                    ? () => _exportCsv(context, provider)
-                    : () => _showProRequired(context, provider),
+                    ? () => _exportAllCsv(context, provider)
+                    : () => ProPurchaseHelper.requestUpgrade(context, provider),
               ),
               ListTile(
                 leading: const Icon(Icons.picture_as_pdf),
@@ -248,10 +298,28 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     : const Icon(Icons.lock, color: Colors.amber),
                 onTap: provider.isPro
                     ? () => _exportPdf(context, provider)
-                    : () => _showProRequired(context, provider),
+                    : () => ProPurchaseHelper.requestUpgrade(context, provider),
               ),
-
-              // ── SAUVEGARDE ──────────────────────────────────────────────────
+              ListTile(
+                leading: const Icon(Icons.calendar_today),
+                title: Text(AppStrings.annualReport),
+                subtitle: provider.isPro
+                    ? Text('Année ${DateTime.now().year}')
+                    : const Text('Version Pro requise'),
+                trailing: provider.isPro
+                    ? const Icon(Icons.chevron_right)
+                    : const Icon(Icons.lock, color: Colors.amber),
+                onTap: provider.isPro
+                    ? () => _exportAnnualPdf(context, provider)
+                    : () => ProPurchaseHelper.requestUpgrade(context, provider),
+              ),
+              ListTile(
+                leading: const Icon(Icons.cloud_upload_outlined),
+                title: Text(AppStrings.cloudSync),
+                subtitle: const Text('Export chiffré via partage (Drive, iCloud…)'),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => _cloudSync(context),
+              ),
               _SectionHeader(title: 'Sauvegarde'),
               ListTile(
                 leading: const Icon(Icons.schedule),
@@ -283,7 +351,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     : const Icon(Icons.lock, color: Colors.amber),
                 onTap: provider.isPro
                     ? () => _backup(context)
-                    : () => _showProRequired(context, provider),
+                    : () => ProPurchaseHelper.requestUpgrade(context, provider),
               ),
               ListTile(
                 leading: const Icon(Icons.restore),
@@ -296,7 +364,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     : const Icon(Icons.lock, color: Colors.amber),
                 onTap: provider.isPro
                     ? () => _restore(context, provider)
-                    : () => _showProRequired(context, provider),
+                    : () => ProPurchaseHelper.requestUpgrade(context, provider),
               ),
 
               // ── DEBUG (dev uniquement) ─────────────────────────────────────
@@ -410,12 +478,28 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
-  Future<void> _exportCsv(BuildContext context, BudgetProvider provider) async {
+  Future<void> _exportCurrentMonthCsv(
+    BuildContext context,
+    BudgetProvider provider,
+  ) async {
     try {
-      await ExportService().exportCsv(
+      await ExportService().exportCurrentMonthCsv(
         provider.transactions,
         provider.categories,
+        provider.currentYear,
+        provider.currentMonth,
       );
+    } catch (e) {
+      if (context.mounted) _showError(context, 'Erreur lors de l\'export CSV');
+    }
+  }
+
+  Future<void> _exportAllCsv(
+    BuildContext context,
+    BudgetProvider provider,
+  ) async {
+    try {
+      await ExportService().exportAllCsv(provider.categories);
     } catch (e) {
       if (context.mounted) _showError(context, 'Erreur lors de l\'export CSV');
     }
@@ -432,6 +516,67 @@ class _SettingsScreenState extends State<SettingsScreen> {
     } catch (e) {
       if (context.mounted) _showError(context, 'Erreur lors de l\'export PDF');
     }
+  }
+
+  Future<void> _exportAnnualPdf(
+    BuildContext context,
+    BudgetProvider provider,
+  ) async {
+    try {
+      await ExportService().exportAnnualPdf(
+        DateTime.now().year,
+        provider.categories,
+      );
+    } catch (e) {
+      if (context.mounted) {
+        _showError(context, 'Erreur lors du rapport annuel');
+      }
+    }
+  }
+
+  Future<void> _cloudSync(BuildContext context) async {
+    try {
+      await CloudSyncService.instance.exportToCloud();
+    } catch (e) {
+      if (context.mounted) _showError(context, 'Erreur sync cloud');
+    }
+  }
+
+  Future<void> _pinWidget(BuildContext context) async {
+    final ok = await WidgetPinService.instance.requestPinWidget();
+    if (!context.mounted) return;
+    _showMessage(
+      ok
+          ? 'Suivez les instructions pour épingler le widget'
+          : 'Épinglage non disponible — ajoutez le widget manuellement',
+    );
+  }
+
+  Future<void> _pickLanguage(BuildContext context) async {
+    final code = await showDialog<String>(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        title: const Text('Choisir la langue'),
+        children: [
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(ctx, 'fr'),
+            child: const Text('Français'),
+          ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(ctx, 'en'),
+            child: const Text('English'),
+          ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(ctx, 'ar'),
+            child: const Text('العربية'),
+          ),
+        ],
+      ),
+    );
+    if (code == null || !context.mounted) return;
+    await PreferencesService().setAppLocaleCode(code);
+    AppStrings.setLocale(Locale(code));
+    _showMessage('Langue mise à jour — redémarrez l\'app si nécessaire');
   }
 
   String _autoBackupSubtitle() {
@@ -544,95 +689,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text(message)));
-    }
-  }
-
-  void _showProRequired(BuildContext context, BudgetProvider provider) {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Fonctionnalité Pro'),
-        content: const Text(
-          'Cette fonctionnalité est disponible dans la version Pro à 4,99 €.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Plus tard'),
-          ),
-          FilledButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              _buyPro(provider);
-            },
-            child: const Text('Passer à Pro'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _restoreProPurchase(BudgetProvider provider) async {
-    try {
-      if (!await PurchaseService.instance.isAvailable()) {
-        throw Exception('Achats in-app non disponibles sur cet appareil.');
-      }
-      await PurchaseService.instance.restorePurchases();
-      if (!mounted) return;
-      if (provider.isPro) {
-        _showMessage('Budget Tracker Pro restauré !');
-      } else {
-        _showMessage(
-          'Restauration lancée. Si vous avez déjà acheté Pro, '
-          'patientez quelques secondes.',
-        );
-      }
-    } catch (e) {
-      if (!mounted) return;
-      final message = e.toString().replaceFirst('Exception: ', '');
-      _showError(context, message);
-    }
-  }
-
-  Future<void> _buyPro(BudgetProvider provider) async {
-    if (_isPurchasing) return;
-    setState(() {
-      _isPurchasing = true;
-    });
-
-    try {
-      if (!await PurchaseService.instance.isAvailable()) {
-        if (kDebugMode) {
-          await provider.setPro(true);
-          _showMessage('Version Pro activée en mode test.');
-          return;
-        }
-        throw Exception('Achat in-app non disponible sur cet appareil.');
-      }
-
-      final products = await PurchaseService.instance.fetchProducts();
-      if (products.isEmpty) {
-        if (kDebugMode) {
-          await provider.setPro(true);
-          _showMessage('Version Pro activée en mode test.');
-          return;
-        }
-        throw Exception('Produit Pro non disponible pour le moment.');
-      }
-
-      await PurchaseService.instance.buyPro(products.first);
-      if (!mounted) return;
-      _showMessage('Achat lancé. Veuillez suivre les instructions.');
-    } catch (e) {
-      if (!mounted) return;
-      final message = e.toString().replaceFirst('Exception: ', '');
-      _showError(context, message);
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isPurchasing = false;
-        });
-      }
     }
   }
 

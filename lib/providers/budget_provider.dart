@@ -3,11 +3,15 @@ import '../models/transaction.dart';
 import '../models/category.dart';
 import '../models/recurring_transaction.dart';
 import '../models/savings_goal.dart';
+import '../models/account.dart';
 import '../services/database_service.dart';
 import '../services/preferences_service.dart';
 import '../services/recurring_service.dart';
 import '../services/widget_service.dart';
 import '../services/auto_backup_service.dart';
+import '../services/notification_service.dart';
+
+enum TransactionFilterType { all, expense, income }
 
 class BudgetProvider extends ChangeNotifier {
   final DatabaseService _db = DatabaseService();
@@ -17,24 +21,36 @@ class BudgetProvider extends ChangeNotifier {
   List<Transaction> _transactions = [];
   List<Category> _categories = [];
   List<RecurringTransaction> _recurringTransactions = [];
+  List<Account> _accounts = [];
   SavingsGoal? _savingsGoal;
+  Transaction? _lastDeletedTransaction;
   bool _isPro = false;
   bool _isDarkTheme = false;
+  bool _budgetAlertsEnabled = true;
+  int _currentAccountId = 1;
   int _currentYear = DateTime.now().year;
   int _currentMonth = DateTime.now().month;
   bool _isLoading = false;
+  String _searchQuery = '';
+  TransactionFilterType _filterType = TransactionFilterType.all;
+  int? _filterCategoryId;
 
-  // ─── GETTERS ──────────────────────────────────────────────────────────────
-
-  List<Transaction> get transactions => _transactions;
+  List<Transaction> get transactions => _filteredTransactions();
   List<Category> get categories => _categories;
-  List<RecurringTransaction> get recurringTransactions => _recurringTransactions;
+  List<RecurringTransaction> get recurringTransactions =>
+      _recurringTransactions;
+  List<Account> get accounts => _accounts;
   SavingsGoal? get savingsGoal => _savingsGoal;
   bool get isPro => _isPro;
   bool get isDarkTheme => _isDarkTheme;
+  bool get budgetAlertsEnabled => _budgetAlertsEnabled;
+  int get currentAccountId => _currentAccountId;
   int get currentYear => _currentYear;
   int get currentMonth => _currentMonth;
   bool get isLoading => _isLoading;
+  String get searchQuery => _searchQuery;
+  TransactionFilterType get filterType => _filterType;
+  int? get filterCategoryId => _filterCategoryId;
 
   double get totalExpenses => _transactions
       .where((t) => t.type == TransactionType.expense)
@@ -54,6 +70,14 @@ class BudgetProvider extends ChangeNotifier {
     return (savingsProgress / _savingsGoal!.targetAmount).clamp(0.0, 1.0);
   }
 
+  Account? get currentAccount {
+    try {
+      return _accounts.firstWhere((a) => a.id == _currentAccountId);
+    } catch (_) {
+      return _accounts.isNotEmpty ? _accounts.first : null;
+    }
+  }
+
   Category? getCategoryById(int id) {
     try {
       return _categories.firstWhere((c) => c.id == id);
@@ -62,7 +86,49 @@ class BudgetProvider extends ChangeNotifier {
     }
   }
 
-  // ─── INITIALISATION ───────────────────────────────────────────────────────
+  Category? getCategoryByName(String name) {
+    try {
+      return _categories.firstWhere(
+        (c) => c.name.toLowerCase() == name.toLowerCase(),
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  List<Transaction> _filteredTransactions() {
+    var list = List<Transaction>.from(_transactions);
+    if (_filterType == TransactionFilterType.expense) {
+      list = list.where((t) => t.type == TransactionType.expense).toList();
+    } else if (_filterType == TransactionFilterType.income) {
+      list = list.where((t) => t.type == TransactionType.income).toList();
+    }
+    if (_filterCategoryId != null) {
+      list = list.where((t) => t.categoryId == _filterCategoryId).toList();
+    }
+    if (_searchQuery.trim().isNotEmpty) {
+      final q = _searchQuery.toLowerCase();
+      list = list.where((t) {
+        final cat = getCategoryById(t.categoryId);
+        return t.label.toLowerCase().contains(q) ||
+            (t.note?.toLowerCase().contains(q) ?? false) ||
+            (t.tags?.toLowerCase().contains(q) ?? false) ||
+            (cat?.name.toLowerCase().contains(q) ?? false) ||
+            t.amount.toString().contains(q);
+      }).toList();
+    }
+    return list;
+  }
+
+  Map<String, List<Transaction>> get groupedTransactions {
+    final map = <String, List<Transaction>>{};
+    for (final t in transactions) {
+      final key =
+          '${t.date.year}-${t.date.month.toString().padLeft(2, '0')}-${t.date.day.toString().padLeft(2, '0')}';
+      map.putIfAbsent(key, () => []).add(t);
+    }
+    return map;
+  }
 
   Future<void> initialize() async {
     _isLoading = true;
@@ -70,6 +136,9 @@ class BudgetProvider extends ChangeNotifier {
 
     _isPro = await _prefs.isPro();
     _isDarkTheme = await _prefs.isDarkTheme();
+    _budgetAlertsEnabled = await _prefs.areBudgetAlertsEnabled();
+    _currentAccountId = await _prefs.getCurrentAccountId();
+    await loadAccounts();
     await loadCategories();
     await _recurring.processDueTransactions();
     await loadRecurringTransactions();
@@ -78,6 +147,7 @@ class BudgetProvider extends ChangeNotifier {
 
     final restored = await AutoBackupService.instance.tryRestoreLatestIfEmpty();
     if (restored) {
+      await loadAccounts();
       await loadCategories();
       await loadRecurringTransactions();
       await loadTransactions();
@@ -85,9 +155,16 @@ class BudgetProvider extends ChangeNotifier {
     }
 
     await AutoBackupService.instance.runDailyBackupIfNeeded();
+    await _checkBudgetAlerts();
 
     _isLoading = false;
     notifyListeners();
+  }
+
+  Future<void> refresh() async {
+    await loadTransactions();
+    await loadSavingsGoal();
+    await _checkBudgetAlerts();
   }
 
   Future<void> _refreshWidget() async {
@@ -100,13 +177,31 @@ class BudgetProvider extends ChangeNotifier {
     );
   }
 
-  // ─── CHARGEMENT ───────────────────────────────────────────────────────────
+  Future<void> _checkBudgetAlerts() async {
+    if (!_budgetAlertsEnabled) return;
+    final expenses = await _db.getExpensesByCategory(
+      year: _currentYear,
+      month: _currentMonth,
+    );
+    await NotificationService.instance.checkBudgetAlerts(
+      categories: _categories,
+      expensesByCategory: expenses,
+      year: _currentYear,
+      month: _currentMonth,
+    );
+  }
+
+  Future<void> loadAccounts() async {
+    _accounts = await _db.getAccounts();
+    notifyListeners();
+  }
 
   Future<void> loadTransactions() async {
     _transactions = await _db.getTransactions(
       year: _currentYear,
       month: _currentMonth,
       limitToThreeMonths: !_isPro,
+      accountId: _currentAccountId,
     );
     await _refreshWidget();
     notifyListeners();
@@ -127,7 +222,40 @@ class BudgetProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  // ─── NAVIGATION MOIS ──────────────────────────────────────────────────────
+  void setSearchQuery(String query) {
+    _searchQuery = query;
+    notifyListeners();
+  }
+
+  void setFilterType(TransactionFilterType type) {
+    _filterType = type;
+    notifyListeners();
+  }
+
+  void setFilterCategoryId(int? categoryId) {
+    _filterCategoryId = categoryId;
+    notifyListeners();
+  }
+
+  void clearFilters() {
+    _searchQuery = '';
+    _filterType = TransactionFilterType.all;
+    _filterCategoryId = null;
+    notifyListeners();
+  }
+
+  Future<void> setCurrentAccount(int accountId) async {
+    _currentAccountId = accountId;
+    await _prefs.setCurrentAccountId(accountId);
+    await loadTransactions();
+    await loadSavingsGoal();
+  }
+
+  Future<void> setBudgetAlertsEnabled(bool value) async {
+    _budgetAlertsEnabled = value;
+    await _prefs.setBudgetAlertsEnabled(value);
+    notifyListeners();
+  }
 
   void previousMonth() {
     if (_currentMonth == 1) {
@@ -143,7 +271,6 @@ class BudgetProvider extends ChangeNotifier {
   void nextMonth() {
     final now = DateTime.now();
     if (_currentYear == now.year && _currentMonth == now.month) return;
-
     if (_currentMonth == 12) {
       _currentMonth = 1;
       _currentYear++;
@@ -159,20 +286,68 @@ class BudgetProvider extends ChangeNotifier {
     return !(_currentYear == now.year && _currentMonth == now.month);
   }
 
-  // ─── TRANSACTIONS ─────────────────────────────────────────────────────────
+  Future<Map<int, double>> getCategoryExpensesSummary() async {
+    return _db.getExpensesByCategory(
+      year: _currentYear,
+      month: _currentMonth,
+    );
+  }
+
+  Future<Map<String, dynamic>?> getMonthComparison() async {
+    final prevMonth = _currentMonth == 1 ? 12 : _currentMonth - 1;
+    final prevYear = _currentMonth == 1 ? _currentYear - 1 : _currentYear;
+    final currentExpenses = totalExpenses;
+    final prevExpenses = await _db.getMonthExpensesTotal(
+      year: prevYear,
+      month: prevMonth,
+      accountId: _currentAccountId,
+    );
+    if (prevExpenses <= 0) return null;
+    final changePct = ((currentExpenses - prevExpenses) / prevExpenses) * 100;
+    return {
+      'current': currentExpenses,
+      'previous': prevExpenses,
+      'changePct': changePct,
+    };
+  }
 
   Future<void> addTransaction(Transaction transaction) async {
-    await _db.insertTransaction(transaction);
+    await _db.insertTransaction(
+      transaction.copyWith(accountId: _currentAccountId),
+    );
     await loadTransactions();
+    await _checkBudgetAlerts();
   }
 
   Future<void> updateTransaction(Transaction transaction) async {
     await _db.updateTransaction(transaction);
     await loadTransactions();
+    await _checkBudgetAlerts();
   }
 
   Future<void> deleteTransaction(int id) async {
+    _lastDeletedTransaction = _transactions.firstWhere((t) => t.id == id);
     await _db.deleteTransaction(id);
+    await loadTransactions();
+  }
+
+  Future<bool> undoLastDelete() async {
+    final t = _lastDeletedTransaction;
+    if (t == null) return false;
+    await _db.insertTransaction(t.copyWith(id: null));
+    _lastDeletedTransaction = null;
+    await loadTransactions();
+    return true;
+  }
+
+  Future<void> duplicateTransaction(Transaction transaction) async {
+    await _db.insertTransaction(
+      transaction.copyWith(
+        id: null,
+        date: DateTime.now(),
+        recurringId: null,
+      ),
+    );
     await loadTransactions();
   }
 
@@ -181,8 +356,6 @@ class BudgetProvider extends ChangeNotifier {
     await loadTransactions();
     return transactions.length;
   }
-
-  // ─── TRANSACTIONS RÉCURRENTES ─────────────────────────────────────────────
 
   Future<void> addRecurringTransaction(RecurringTransaction recurring) async {
     await _db.insertRecurringTransaction(recurring);
@@ -214,8 +387,6 @@ class BudgetProvider extends ChangeNotifier {
     await loadRecurringTransactions();
   }
 
-  // ─── OBJECTIFS D'ÉPARGNE ──────────────────────────────────────────────────
-
   Future<void> setSavingsGoal(double targetAmount) async {
     await _db.upsertSavingsGoal(
       SavingsGoal(
@@ -233,8 +404,6 @@ class BudgetProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  // ─── CATÉGORIES ───────────────────────────────────────────────────────────
-
   Future<void> addCategory(Category category) async {
     await _db.insertCategory(category);
     await loadCategories();
@@ -250,8 +419,6 @@ class BudgetProvider extends ChangeNotifier {
     await loadCategories();
   }
 
-  // ─── STATUT PRO ──────────────────────────────────────────────────────────
-
   Future<void> setPro(bool value) async {
     _isPro = value;
     await _prefs.setPro(value);
@@ -259,18 +426,17 @@ class BudgetProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  // ─── THÈME ───────────────────────────────────────────────────────────────
-
   Future<void> setDarkTheme(bool value) async {
     _isDarkTheme = value;
     await _prefs.setDarkTheme(value);
     notifyListeners();
   }
 
-  // ─── STATISTIQUES ─────────────────────────────────────────────────────────
-
   Future<Map<int, double>> getExpensesByCategory() async {
-    return _db.getExpensesByCategory(year: _currentYear, month: _currentMonth);
+    return _db.getExpensesByCategory(
+      year: _currentYear,
+      month: _currentMonth,
+    );
   }
 
   Future<List<Map<String, dynamic>>> getMonthlyTotals() async {

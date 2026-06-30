@@ -4,6 +4,7 @@ import '../models/transaction.dart';
 import '../models/category.dart';
 import '../models/recurring_transaction.dart';
 import '../models/savings_goal.dart';
+import '../models/account.dart';
 
 class DatabaseService {
   static final DatabaseService _instance = DatabaseService._internal();
@@ -11,7 +12,7 @@ class DatabaseService {
   DatabaseService._internal();
 
   static Database? _db;
-  static const int _dbVersion = 2;
+  static const int _dbVersion = 3;
 
   Future<Database> get database async {
     _db ??= await _initDatabase();
@@ -33,9 +34,13 @@ class DatabaseService {
   Future<void> _onCreate(Database db, int version) async {
     await _createCoreTables(db);
     await _createV2Tables(db);
+    await _createV3Tables(db);
 
     for (final cat in defaultCategories) {
       await db.insert('categories', cat.toMap()..remove('id'));
+    }
+    for (final acc in defaultAccounts) {
+      await db.insert('accounts', acc.toMap()..remove('id'));
     }
   }
 
@@ -46,6 +51,45 @@ class DatabaseService {
       );
       await _createV2Tables(db);
     }
+    if (oldVersion < 3) {
+      await _createV3Tables(db);
+      await db.execute('ALTER TABLE transactions ADD COLUMN tags TEXT');
+      await db.execute(
+        'ALTER TABLE transactions ADD COLUMN account_id INTEGER NOT NULL DEFAULT 1',
+      );
+      for (final acc in defaultAccounts) {
+        await db.insert('accounts', acc.toMap()..remove('id'));
+      }
+      await _seedDefaultBudgets(db);
+    }
+  }
+
+  Future<void> _seedDefaultBudgets(Database db) async {
+    const budgets = {
+      'Alimentation': 400.0,
+      'Transport': 150.0,
+      'Logement': 800.0,
+      'Loisirs': 120.0,
+    };
+    for (final entry in budgets.entries) {
+      await db.update(
+        'categories',
+        {'monthly_budget': entry.value},
+        where: 'name = ? AND monthly_budget IS NULL',
+        whereArgs: [entry.key],
+      );
+    }
+  }
+
+  Future<void> _createV3Tables(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS accounts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        icon TEXT NOT NULL,
+        is_default INTEGER NOT NULL DEFAULT 0
+      )
+    ''');
   }
 
   Future<void> _createCoreTables(Database db) async {
@@ -70,6 +114,8 @@ class DatabaseService {
         date TEXT NOT NULL,
         note TEXT,
         recurring_id INTEGER,
+        tags TEXT,
+        account_id INTEGER NOT NULL DEFAULT 1,
         FOREIGN KEY (category_id) REFERENCES categories (id)
       )
     ''');
@@ -150,35 +196,80 @@ class DatabaseService {
     await db.delete('categories', where: 'id = ?', whereArgs: [id]);
   }
 
+  Future<List<Account>> getAccounts() async {
+    final db = await database;
+    final maps = await db.query('accounts', orderBy: 'id ASC');
+    return maps.map((m) => Account.fromMap(m)).toList();
+  }
+
+  Future<void> insertAccount(Account account) async {
+    final db = await database;
+    await db.insert('accounts', account.toMap()..remove('id'));
+  }
+
   // ─── TRANSACTIONS ─────────────────────────────────────────────────────────
 
   Future<List<Transaction>> getTransactions({
     int? year,
     int? month,
     bool limitToThreeMonths = false,
+    int? accountId,
   }) async {
     final db = await database;
-    String? where;
-    List<dynamic>? whereArgs;
+    final clauses = <String>[];
+    final args = <dynamic>[];
 
     if (year != null && month != null) {
       final start = DateTime(year, month, 1).toIso8601String();
       final end = DateTime(year, month + 1, 1).toIso8601String();
-      where = 'date >= ? AND date < ?';
-      whereArgs = [start, end];
+      clauses.add('date >= ? AND date < ?');
+      args.addAll([start, end]);
     } else if (limitToThreeMonths) {
       final limit = DateTime.now().subtract(const Duration(days: 92));
-      where = 'date >= ?';
-      whereArgs = [limit.toIso8601String()];
+      clauses.add('date >= ?');
+      args.add(limit.toIso8601String());
+    }
+
+    if (accountId != null) {
+      clauses.add('account_id = ?');
+      args.add(accountId);
     }
 
     final maps = await db.query(
       'transactions',
-      where: where,
-      whereArgs: whereArgs,
+      where: clauses.isEmpty ? null : clauses.join(' AND '),
+      whereArgs: args.isEmpty ? null : args,
       orderBy: 'date DESC',
     );
     return maps.map((m) => Transaction.fromMap(m)).toList();
+  }
+
+  Future<List<Transaction>> getTransactionsForYear(int year) async {
+    final db = await database;
+    final start = DateTime(year, 1, 1).toIso8601String();
+    final end = DateTime(year + 1, 1, 1).toIso8601String();
+    final maps = await db.query(
+      'transactions',
+      where: 'date >= ? AND date < ?',
+      whereArgs: [start, end],
+      orderBy: 'date DESC',
+    );
+    return maps.map((m) => Transaction.fromMap(m)).toList();
+  }
+
+  Future<double> getMonthExpensesTotal({
+    required int year,
+    required int month,
+    int? accountId,
+  }) async {
+    final txs = await getTransactions(
+      year: year,
+      month: month,
+      accountId: accountId,
+    );
+    return txs
+        .where((t) => t.type == TransactionType.expense)
+        .fold<double>(0.0, (s, t) => s + t.amount);
   }
 
   Future<List<Transaction>> getAllTransactions() async {
@@ -387,6 +478,7 @@ class DatabaseService {
       'transactions': await db.query('transactions'),
       'recurring_transactions': await db.query('recurring_transactions'),
       'savings_goals': await db.query('savings_goals'),
+      'accounts': await db.query('accounts'),
       'exported_at': DateTime.now().toIso8601String(),
       'version': _dbVersion,
     };
@@ -399,6 +491,7 @@ class DatabaseService {
       await txn.delete('recurring_transactions');
       await txn.delete('savings_goals');
       await txn.delete('categories');
+      await txn.delete('accounts');
 
       for (final cat in (data['categories'] as List)) {
         await txn.insert('categories', Map<String, dynamic>.from(cat as Map));
@@ -420,6 +513,11 @@ class DatabaseService {
             'savings_goals',
             Map<String, dynamic>.from(g as Map),
           );
+        }
+      }
+      if (data['accounts'] != null) {
+        for (final a in (data['accounts'] as List)) {
+          await txn.insert('accounts', Map<String, dynamic>.from(a as Map));
         }
       }
     });

@@ -1,24 +1,37 @@
 ﻿import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'dart:io' show Platform;
 import 'package:home_widget/home_widget.dart';
+import 'config/app_config.dart';
+import 'l10n/app_strings.dart';
 import 'providers/budget_provider.dart';
 import 'screens/home_screen.dart';
 import 'screens/stats_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/add_transaction_screen.dart';
 import 'screens/lock_screen.dart';
+import 'screens/onboarding_screen.dart';
 import 'services/ad_service.dart';
 import 'services/lock_service.dart';
+import 'services/notification_service.dart';
 import 'services/purchase_service.dart';
+import 'services/preferences_service.dart';
 import 'services/widget_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await AdService.instance.initialize();
   await WidgetService.instance.initialize();
+  await NotificationService.instance.initialize();
   await initializeDateFormatting('fr_FR', null);
+  await initializeDateFormatting('en_US', null);
+  await initializeDateFormatting('ar', null);
+
+  final localeCode = await PreferencesService().getAppLocaleCode();
+  AppStrings.setLocale(Locale(localeCode));
+
   runApp(
     ChangeNotifierProvider(
       create: (_) => BudgetProvider()..initialize(),
@@ -36,21 +49,29 @@ class BudgetTrackerApp extends StatelessWidget {
       builder: (context, provider, _) {
         return MaterialApp(
           title: 'Budget Tracker',
-          locale: const Locale('fr', 'FR'),
+          locale: Locale(AppStrings.locale.name),
+          supportedLocales: const [
+            Locale('fr', 'FR'),
+            Locale('en', 'US'),
+            Locale('ar'),
+          ],
+          localizationsDelegates: const [
+            GlobalMaterialLocalizations.delegate,
+            GlobalWidgetsLocalizations.delegate,
+            GlobalCupertinoLocalizations.delegate,
+          ],
           debugShowCheckedModeBanner: false,
-          themeMode: (provider.isPro && provider.isDarkTheme)
-              ? ThemeMode.dark
-              : ThemeMode.light,
+          themeMode: provider.isDarkTheme ? ThemeMode.dark : ThemeMode.light,
           theme: ThemeData(
             colorScheme: ColorScheme.fromSeed(
-              seedColor: Colors.indigo,
+              seedColor: AppConfig.seedColor,
               brightness: Brightness.light,
             ),
             useMaterial3: true,
           ),
           darkTheme: ThemeData(
             colorScheme: ColorScheme.fromSeed(
-              seedColor: Colors.indigo,
+              seedColor: AppConfig.seedColor,
               brightness: Brightness.dark,
             ),
             useMaterial3: true,
@@ -72,12 +93,15 @@ class AppShell extends StatefulWidget {
 class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   bool _locked = false;
   bool _checkingLock = true;
+  bool _showOnboarding = false;
+  bool _onboardingChecked = false;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _checkLock();
+    _checkOnboarding();
     _initPurchases();
     if (Platform.isAndroid) {
       _checkWidgetLaunch();
@@ -85,6 +109,16 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
         if (uri?.host == 'add' && mounted) {
           _openAddFromWidget();
         }
+      });
+    }
+  }
+
+  Future<void> _checkOnboarding() async {
+    final done = await PreferencesService().isOnboardingDone();
+    if (mounted) {
+      setState(() {
+        _showOnboarding = !done;
+        _onboardingChecked = true;
       });
     }
   }
@@ -111,6 +145,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
 
       if (!provider.isPro) {
         await PurchaseService.instance.restorePurchases();
+        await PurchaseService.instance.warmUpProducts();
       }
     });
   }
@@ -157,9 +192,15 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
-    if (_checkingLock) {
+    if (!_onboardingChecked || _checkingLock) {
       return const Scaffold(
         body: Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    if (_showOnboarding) {
+      return OnboardingScreen(
+        onComplete: () => setState(() => _showOnboarding = false),
       );
     }
 
@@ -194,21 +235,21 @@ class _MainNavigationState extends State<MainNavigation> {
       bottomNavigationBar: NavigationBar(
         selectedIndex: _currentIndex,
         onDestinationSelected: (i) => setState(() => _currentIndex = i),
-        destinations: const [
+        destinations: [
           NavigationDestination(
-            icon: Icon(Icons.home_outlined),
-            selectedIcon: Icon(Icons.home),
-            label: 'Accueil',
+            icon: const Icon(Icons.home_outlined),
+            selectedIcon: const Icon(Icons.home),
+            label: AppStrings.home,
           ),
           NavigationDestination(
-            icon: Icon(Icons.bar_chart_outlined),
-            selectedIcon: Icon(Icons.bar_chart),
-            label: 'Statistiques',
+            icon: const Icon(Icons.bar_chart_outlined),
+            selectedIcon: const Icon(Icons.bar_chart),
+            label: AppStrings.stats,
           ),
           NavigationDestination(
-            icon: Icon(Icons.settings_outlined),
-            selectedIcon: Icon(Icons.settings),
-            label: 'Reglages',
+            icon: const Icon(Icons.settings_outlined),
+            selectedIcon: const Icon(Icons.settings),
+            label: AppStrings.settings,
           ),
         ],
       ),

@@ -9,6 +9,8 @@ class Transaction {
   final DateTime date;
   final String? note;
   final int? recurringId;
+  final String? tags;
+  final int accountId;
 
   const Transaction({
     this.id,
@@ -19,7 +21,14 @@ class Transaction {
     required this.date,
     this.note,
     this.recurringId,
+    this.tags,
+    this.accountId = 1,
   });
+
+  List<String> get tagList {
+    if (tags == null || tags!.trim().isEmpty) return [];
+    return tags!.split(',').map((t) => t.trim()).where((t) => t.isNotEmpty).toList();
+  }
 
   Map<String, dynamic> toMap() {
     return {
@@ -31,6 +40,8 @@ class Transaction {
       'date': date.toIso8601String(),
       'note': note,
       'recurring_id': recurringId,
+      'tags': tags,
+      'account_id': accountId,
     };
   }
 
@@ -47,6 +58,8 @@ class Transaction {
       date: DateTime.parse(map['date'] as String),
       note: map['note'] as String?,
       recurringId: map['recurring_id'] as int?,
+      tags: map['tags'] as String?,
+      accountId: map['account_id'] as int? ?? 1,
     );
   }
 
@@ -59,6 +72,8 @@ class Transaction {
     DateTime? date,
     String? note,
     int? recurringId,
+    String? tags,
+    int? accountId,
   }) {
     return Transaction(
       id: id ?? this.id,
@@ -69,6 +84,8 @@ class Transaction {
       date: date ?? this.date,
       note: note ?? this.note,
       recurringId: recurringId ?? this.recurringId,
+      tags: tags ?? this.tags,
+      accountId: accountId ?? this.accountId,
     );
   }
 }

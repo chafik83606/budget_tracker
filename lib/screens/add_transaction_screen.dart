@@ -7,24 +7,7 @@ import '../services/ad_service.dart';
 import '../services/preferences_service.dart';
 import 'scan_receipt_screen.dart';
 
-const List<String> _frMonthNames = [
-  'janvier',
-  'fevrier',
-  'mars',
-  'avril',
-  'mai',
-  'juin',
-  'juillet',
-  'aout',
-  'septembre',
-  'octobre',
-  'novembre',
-  'decembre',
-];
-
-String _formatFrenchLongDate(DateTime date) {
-  return '${date.day.toString().padLeft(2, '0')} ${_frMonthNames[date.month - 1]} ${date.year}';
-}
+import '../utils/date_formatters.dart';
 
 class AddTransactionScreen extends StatefulWidget {
   final Transaction? transaction;
@@ -33,6 +16,7 @@ class AddTransactionScreen extends StatefulWidget {
   final DateTime? prefilledDate;
   final int? prefilledCategoryId;
   final String? prefilledNote;
+  final TransactionType? initialType;
 
   const AddTransactionScreen({
     super.key,
@@ -42,6 +26,7 @@ class AddTransactionScreen extends StatefulWidget {
     this.prefilledDate,
     this.prefilledCategoryId,
     this.prefilledNote,
+    this.initialType,
   });
 
   @override
@@ -53,6 +38,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
   final _amountController = TextEditingController();
   final _labelController = TextEditingController();
   final _noteController = TextEditingController();
+  final _tagsController = TextEditingController();
 
   TransactionType _type = TransactionType.expense;
   int? _selectedCategoryId;
@@ -68,6 +54,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
       _amountController.text = t.amount.toStringAsFixed(2);
       _labelController.text = t.label;
       _noteController.text = t.note ?? '';
+      _tagsController.text = t.tags ?? '';
       _type = t.type;
       _selectedCategoryId = t.categoryId;
       _selectedDate = t.date;
@@ -87,6 +74,9 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
       if (widget.prefilledCategoryId != null) {
         _selectedCategoryId = widget.prefilledCategoryId;
       }
+      if (widget.initialType != null) {
+        _type = widget.initialType!;
+      }
     }
   }
 
@@ -95,6 +85,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
     _amountController.dispose();
     _labelController.dispose();
     _noteController.dispose();
+    _tagsController.dispose();
     super.dispose();
   }
 
@@ -202,6 +193,16 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
                     border: OutlineInputBorder(),
                   ),
                 ),
+                const SizedBox(height: 16),
+                TextFormField(
+                  controller: _tagsController,
+                  decoration: const InputDecoration(
+                    labelText: 'Tags (optionnel, séparés par des virgules)',
+                    prefixIcon: Icon(Icons.sell_outlined),
+                    border: OutlineInputBorder(),
+                    hintText: 'vacances, urgent',
+                  ),
+                ),
                 const SizedBox(height: 24),
 
                 // Bouton Enregistrer
@@ -244,6 +245,9 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
       note: _noteController.text.trim().isEmpty
           ? null
           : _noteController.text.trim(),
+      tags: _tagsController.text.trim().isEmpty
+          ? null
+          : _tagsController.text.trim(),
     );
 
     if (_isEditing) {
@@ -382,7 +386,7 @@ class _DateSelector extends StatelessWidget {
           prefixIcon: Icon(Icons.calendar_today),
           border: OutlineInputBorder(),
         ),
-        child: Text(_formatFrenchLongDate(date)),
+        child: Text(formatFrenchLongDate(date)),
       ),
     );
   }

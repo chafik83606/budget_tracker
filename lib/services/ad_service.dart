@@ -3,16 +3,12 @@ import 'dart:io' show Platform;
 
 import 'package:flutter/foundation.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
+import '../config/app_config.dart';
 
 class AdService {
   AdService._internal();
   static final AdService instance = AdService._internal();
   bool _initialized = false;
-
-  static const String _androidInterstitialId =
-      'ca-app-pub-3940256099942544/1033173712';
-  static const String _iosInterstitialId =
-      'ca-app-pub-3940256099942544/4411468910';
 
   Future<void> initialize() async {
     if (_initialized) return;
@@ -26,8 +22,8 @@ class AdService {
 
   String get interstitialAdUnitId {
     if (kIsWeb) return '';
-    if (Platform.isAndroid) return _androidInterstitialId;
-    if (Platform.isIOS) return _iosInterstitialId;
+    if (Platform.isAndroid) return AppConfig.admobAndroidInterstitialId;
+    if (Platform.isIOS) return AppConfig.admobIosInterstitialId;
     return '';
   }
 
@@ -59,8 +55,7 @@ class AdService {
         },
       ),
     );
-
-    await completer.future.timeout(
+    return completer.future.timeout(
       const Duration(seconds: 5),
       onTimeout: () {},
     );

@@ -1,4 +1,4 @@
-package com.ctre2.budgettracker
+package com.dynaweb.budgettracker
 
 import android.appwidget.AppWidgetManager
 import android.content.Context

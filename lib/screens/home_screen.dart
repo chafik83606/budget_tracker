@@ -1,39 +1,31 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
+import '../config/app_config.dart';
+import '../l10n/app_strings.dart';
 import '../providers/budget_provider.dart';
 import '../models/transaction.dart';
 import '../models/category.dart';
+import '../utils/date_formatters.dart';
+import '../widgets/add_bottom_sheet.dart';
 import 'add_transaction_screen.dart';
-import 'scan_receipt_screen.dart';
 
-const List<String> _frMonthNames = [
-  'janvier',
-  'fevrier',
-  'mars',
-  'avril',
-  'mai',
-  'juin',
-  'juillet',
-  'aout',
-  'septembre',
-  'octobre',
-  'novembre',
-  'decembre',
-];
-
-String _formatFrenchMonthYear(DateTime date) {
-  return '${_frMonthNames[date.month - 1]} ${date.year}';
-}
-
-String _formatDayMonth(DateTime date) {
-  final day = date.day.toString().padLeft(2, '0');
-  final month = date.month.toString().padLeft(2, '0');
-  return '$day/$month';
-}
-
-class HomeScreen extends StatelessWidget {
+class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
+
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  final _searchController = TextEditingController();
+  bool _showSearch = false;
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -41,110 +33,96 @@ class HomeScreen extends StatelessWidget {
       builder: (context, provider, _) {
         return Scaffold(
           appBar: AppBar(
-            title: const Text('Budget Tracker'),
+            title: _showSearch
+                ? TextField(
+                    controller: _searchController,
+                    autofocus: true,
+                    decoration: InputDecoration(
+                      hintText: AppStrings.searchHint,
+                      border: InputBorder.none,
+                    ),
+                    onChanged: provider.setSearchQuery,
+                  )
+                : Text(
+                    provider.currentAccount != null
+                        ? '${provider.currentAccount!.icon} Budget Tracker'
+                        : 'Budget Tracker',
+                  ),
             centerTitle: true,
-            elevation: 0,
+            actions: [
+              IconButton(
+                icon: Icon(_showSearch ? Icons.close : Icons.search),
+                onPressed: () {
+                  setState(() {
+                    _showSearch = !_showSearch;
+                    if (!_showSearch) {
+                      _searchController.clear();
+                      provider.clearFilters();
+                    }
+                  });
+                },
+              ),
+              if (_showSearch)
+                PopupMenuButton<TransactionFilterType>(
+                  icon: const Icon(Icons.filter_list),
+                  onSelected: provider.setFilterType,
+                  itemBuilder: (_) => const [
+                    PopupMenuItem(
+                      value: TransactionFilterType.all,
+                      child: Text('Tous'),
+                    ),
+                    PopupMenuItem(
+                      value: TransactionFilterType.expense,
+                      child: Text('Dépenses'),
+                    ),
+                    PopupMenuItem(
+                      value: TransactionFilterType.income,
+                      child: Text('Revenus'),
+                    ),
+                  ],
+                ),
+            ],
           ),
           body: Column(
             children: [
               _BalanceHeader(provider: provider),
               _SavingsGoalCard(provider: provider),
+              _CategorySummary(provider: provider),
               _MonthNavigator(provider: provider),
               Expanded(
-                child: provider.isLoading
-                    ? const Center(child: CircularProgressIndicator())
-                    : provider.transactions.isEmpty
-                    ? const _EmptyState()
-                    : _TransactionList(provider: provider),
+                child: RefreshIndicator(
+                  onRefresh: provider.refresh,
+                  child: provider.isLoading
+                      ? ListView(
+                          children: const [
+                            SizedBox(height: 120),
+                            Center(child: CircularProgressIndicator()),
+                          ],
+                        )
+                      : provider.transactions.isEmpty
+                      ? ListView(
+                          children: const [
+                            SizedBox(height: 80),
+                            _EmptyState(),
+                          ],
+                        )
+                      : _GroupedTransactionList(provider: provider),
+                ),
               ),
-              // Bannière pub (version gratuite)
               if (!provider.isPro) const _AdBanner(),
             ],
           ),
           floatingActionButton: FloatingActionButton.extended(
-            onPressed: () => _showAddOptions(context, provider),
+            onPressed: () => showAddBottomSheet(context, provider),
+            backgroundColor: AppConfig.seedColor,
             icon: const Icon(Icons.add),
-            label: const Text('Ajouter'),
+            label: Text(AppStrings.add),
           ),
         );
       },
     );
   }
-
-  void _showAddOptions(BuildContext context, BudgetProvider provider) {
-    showModalBottomSheet(
-      context: context,
-      builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.edit),
-              title: const Text('Saisie manuelle'),
-              onTap: () {
-                Navigator.pop(ctx);
-                _openAddTransaction(context);
-              },
-            ),
-            ListTile(
-              leading: Icon(
-                Icons.document_scanner,
-                color: provider.isPro ? null : Colors.grey,
-              ),
-              title: const Text('Scanner un ticket (OCR)'),
-              subtitle: provider.isPro
-                  ? const Text('Photo de caisse ou reçu')
-                  : const Text('Version Pro requise'),
-              trailing: provider.isPro
-                  ? null
-                  : const Icon(Icons.lock, color: Colors.amber, size: 18),
-              onTap: () {
-                Navigator.pop(ctx);
-                if (provider.isPro) {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => const ScanReceiptScreen(),
-                    ),
-                  );
-                } else {
-                  _showProRequired(context);
-                }
-              },
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _showProRequired(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Fonctionnalité Pro'),
-        content: const Text(
-          'Le scan OCR de tickets est disponible dans la version Pro.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('OK'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _openAddTransaction(BuildContext context) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(builder: (_) => const AddTransactionScreen()),
-    );
-  }
 }
-
-// ─── WIDGET EN-TÊTE SOLDE ────────────────────────────────────────────────────
 
 class _BalanceHeader extends StatelessWidget {
   final BudgetProvider provider;
@@ -161,10 +139,8 @@ class _BalanceHeader extends StatelessWidget {
       decoration: BoxDecoration(
         gradient: LinearGradient(
           colors: isPositive
-              ? [Colors.green.shade600, Colors.green.shade400]
-              : [Colors.red.shade600, Colors.red.shade400],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
+              ? [AppConfig.seedColor, Colors.green.shade400]
+              : [Colors.red.shade700, Colors.red.shade400],
         ),
       ),
       child: Row(
@@ -173,17 +149,25 @@ class _BalanceHeader extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  'Solde du mois',
-                  style: TextStyle(color: Colors.white70, fontSize: 13),
+                Text(
+                  AppStrings.balanceMonth,
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.85),
+                    fontSize: 13,
+                  ),
                 ),
                 const SizedBox(height: 4),
-                Text(
-                  fmt.format(balance),
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 28,
-                    fontWeight: FontWeight.bold,
+                TweenAnimationBuilder<double>(
+                  tween: Tween(end: balance),
+                  duration: const Duration(milliseconds: 500),
+                  curve: Curves.easeOut,
+                  builder: (_, value, __) => Text(
+                    fmt.format(value),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 32,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                 ),
               ],
@@ -193,15 +177,15 @@ class _BalanceHeader extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               _MiniStat(
-                label: 'Revenus',
+                label: AppStrings.incomes,
                 amount: provider.totalIncomes,
                 color: Colors.greenAccent,
               ),
               const SizedBox(height: 4),
               _MiniStat(
-                label: 'Dépenses',
+                label: AppStrings.expenses,
                 amount: provider.totalExpenses,
-                color: Colors.redAccent.shade100,
+                color: Colors.red.shade100,
               ),
             ],
           ),
@@ -215,6 +199,7 @@ class _MiniStat extends StatelessWidget {
   final String label;
   final double amount;
   final Color color;
+
   const _MiniStat({
     required this.label,
     required this.amount,
@@ -232,16 +217,14 @@ class _MiniStat extends StatelessWidget {
           fmt.format(amount),
           style: TextStyle(
             color: color,
-            fontSize: 14,
-            fontWeight: FontWeight.w600,
+            fontSize: 15,
+            fontWeight: FontWeight.w700,
           ),
         ),
       ],
     );
   }
 }
-
-// ─── OBJECTIF D'ÉPARGNE ──────────────────────────────────────────────────────
 
 class _SavingsGoalCard extends StatelessWidget {
   final BudgetProvider provider;
@@ -277,7 +260,7 @@ class _SavingsGoalCard extends StatelessWidget {
               children: [
                 Icon(
                   Icons.savings,
-                  color: reached ? Colors.green : Colors.indigo,
+                  color: reached ? Colors.green : AppConfig.seedColor,
                   size: 20,
                 ),
                 const SizedBox(width: 8),
@@ -289,26 +272,21 @@ class _SavingsGoalCard extends StatelessWidget {
                 ),
                 IconButton(
                   icon: const Icon(Icons.edit, size: 18),
-                  onPressed: () => _showGoalDialog(context, provider, goal.targetAmount),
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.close, size: 18),
-                  onPressed: () => provider.clearSavingsGoal(),
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(),
+                  onPressed: () =>
+                      _showGoalDialog(context, provider, goal.targetAmount),
                 ),
               ],
             ),
-            const SizedBox(height: 8),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(4),
-              child: LinearProgressIndicator(
-                value: ratio,
+            TweenAnimationBuilder<double>(
+              tween: Tween(end: ratio),
+              duration: const Duration(milliseconds: 600),
+              curve: Curves.easeOut,
+              builder: (_, value, __) => LinearProgressIndicator(
+                value: value,
                 minHeight: 8,
+                borderRadius: BorderRadius.circular(4),
                 backgroundColor: Colors.grey.shade200,
-                color: reached ? Colors.green : Colors.indigo,
+                color: reached ? Colors.green : AppConfig.seedColor,
               ),
             ),
             const SizedBox(height: 6),
@@ -317,7 +295,7 @@ class _SavingsGoalCard extends StatelessWidget {
               '${reached ? ' — Objectif atteint !' : ''}',
               style: TextStyle(
                 fontSize: 13,
-                color: reached ? Colors.green.shade700 : Colors.grey.shade700,
+                color: reached ? Colors.green.shade700 : Colors.grey.shade600,
               ),
             ),
           ],
@@ -366,7 +344,111 @@ class _SavingsGoalCard extends StatelessWidget {
   }
 }
 
-// ─── NAVIGATION MOIS ─────────────────────────────────────────────────────────
+class _CategorySummary extends StatefulWidget {
+  final BudgetProvider provider;
+  const _CategorySummary({required this.provider});
+
+  @override
+  State<_CategorySummary> createState() => _CategorySummaryState();
+}
+
+class _CategorySummaryState extends State<_CategorySummary> {
+  Map<int, double>? _expenses;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  @override
+  void didUpdateWidget(_CategorySummary oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.provider.currentMonth != widget.provider.currentMonth ||
+        oldWidget.provider.currentYear != widget.provider.currentYear) {
+      _load();
+    }
+  }
+
+  Future<void> _load() async {
+    final data = await widget.provider.getCategoryExpensesSummary();
+    if (mounted) setState(() => _expenses = data);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final expenses = _expenses;
+    if (expenses == null || expenses.isEmpty) return const SizedBox.shrink();
+
+    final withBudget = widget.provider.categories
+        .where((c) => c.monthlyBudget != null && c.monthlyBudget! > 0)
+        .where((c) => expenses.containsKey(c.id))
+        .take(4)
+        .toList();
+
+    if (withBudget.isEmpty) return const SizedBox.shrink();
+    final fmt = NumberFormat.currency(locale: 'fr_FR', symbol: '€');
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            AppStrings.categoriesSummary,
+            style: TextStyle(
+              fontWeight: FontWeight.w600,
+              color: Colors.grey.shade700,
+              fontSize: 13,
+            ),
+          ),
+          const SizedBox(height: 8),
+          ...withBudget.map((cat) {
+            final spent = expenses[cat.id!] ?? 0;
+            final budget = cat.monthlyBudget!;
+            final ratio = (spent / budget).clamp(0.0, 1.0);
+            final over = spent > budget;
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Text(cat.icon, style: const TextStyle(fontSize: 14)),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          cat.name,
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                      ),
+                      Text(
+                        '${fmt.format(spent)} / ${fmt.format(budget)}',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: over ? Colors.red : Colors.grey.shade600,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 2),
+                  LinearProgressIndicator(
+                    value: ratio,
+                    minHeight: 4,
+                    backgroundColor: Colors.grey.shade200,
+                    color: over ? Colors.red : cat.color,
+                  ),
+                ],
+              ),
+            );
+          }),
+        ],
+      ),
+    );
+  }
+}
 
 class _MonthNavigator extends StatelessWidget {
   final BudgetProvider provider;
@@ -374,10 +456,6 @@ class _MonthNavigator extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final monthName = _formatFrenchMonthYear(
-      DateTime(provider.currentYear, provider.currentMonth),
-    );
-
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       child: Row(
@@ -388,7 +466,9 @@ class _MonthNavigator extends StatelessWidget {
             onPressed: provider.previousMonth,
           ),
           Text(
-            monthName,
+            formatFrenchMonthYear(
+              DateTime(provider.currentYear, provider.currentMonth),
+            ),
             style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 16),
           ),
           IconButton(
@@ -404,26 +484,49 @@ class _MonthNavigator extends StatelessWidget {
   }
 }
 
-// ─── LISTE DES TRANSACTIONS ───────────────────────────────────────────────────
-
-class _TransactionList extends StatelessWidget {
+class _GroupedTransactionList extends StatelessWidget {
   final BudgetProvider provider;
-  const _TransactionList({required this.provider});
+  const _GroupedTransactionList({required this.provider});
 
   @override
   Widget build(BuildContext context) {
-    final transactions = provider.transactions;
+    final groups = provider.groupedTransactions;
+    final keys = groups.keys.toList()..sort((a, b) => b.compareTo(a));
 
     return ListView.builder(
-      padding: const EdgeInsets.only(bottom: 80),
-      itemCount: transactions.length,
+      padding: const EdgeInsets.only(bottom: 88),
+      itemCount: keys.length,
       itemBuilder: (context, index) {
-        final t = transactions[index];
-        final cat = provider.getCategoryById(t.categoryId);
-        return _TransactionTile(
-          transaction: t,
-          category: cat,
-          provider: provider,
+        final key = keys[index];
+        final parts = key.split('-');
+        final date = DateTime(
+          int.parse(parts[0]),
+          int.parse(parts[1]),
+          int.parse(parts[2]),
+        );
+        final txs = groups[key]!;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+              child: Text(
+                formatDayHeader(date),
+                style: TextStyle(
+                  fontWeight: FontWeight.w600,
+                  color: Colors.grey.shade600,
+                  fontSize: 13,
+                ),
+              ),
+            ),
+            ...txs.map(
+              (t) => _TransactionTile(
+                transaction: t,
+                category: provider.getCategoryById(t.categoryId),
+                provider: provider,
+              ),
+            ),
+          ],
         );
       },
     );
@@ -434,6 +537,7 @@ class _TransactionTile extends StatelessWidget {
   final Transaction transaction;
   final Category? category;
   final BudgetProvider provider;
+
   const _TransactionTile({
     required this.transaction,
     required this.category,
@@ -444,7 +548,6 @@ class _TransactionTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final fmt = NumberFormat.currency(locale: 'fr_FR', symbol: '€');
     final isExpense = transaction.type == TransactionType.expense;
-    final dateStr = _formatDayMonth(transaction.date);
 
     return Dismissible(
       key: Key('t_${transaction.id}'),
@@ -477,7 +580,20 @@ class _TransactionTile extends StatelessWidget {
           ),
         );
       },
-      onDismissed: (_) => provider.deleteTransaction(transaction.id!),
+      onDismissed: (_) async {
+        await provider.deleteTransaction(transaction.id!);
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(AppStrings.deleted),
+              action: SnackBarAction(
+                label: AppStrings.undo,
+                onPressed: () => provider.undoLastDelete(),
+              ),
+            ),
+          );
+        }
+      },
       child: ListTile(
         onTap: () => Navigator.push(
           context,
@@ -485,37 +601,71 @@ class _TransactionTile extends StatelessWidget {
             builder: (_) => AddTransactionScreen(transaction: transaction),
           ),
         ),
+        onLongPress: () => _showActions(context),
         leading: CircleAvatar(
           backgroundColor: (category?.color ?? Colors.grey).withValues(
             alpha: 0.2,
           ),
-          child: Text(
-            category?.icon ?? '📦',
-            style: const TextStyle(fontSize: 20),
-          ),
+          child: Text(category?.icon ?? '📦', style: const TextStyle(fontSize: 20)),
         ),
         title: Text(
           transaction.label,
           style: const TextStyle(fontWeight: FontWeight.w500),
         ),
         subtitle: Text(
-          '${category?.name ?? 'Inconnu'} · $dateStr',
-          style: const TextStyle(fontSize: 12),
+          [
+            category?.name ?? 'Inconnu',
+            if (transaction.tags?.isNotEmpty == true) transaction.tags,
+          ].join(' · '),
+          style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
         ),
         trailing: Text(
           '${isExpense ? '-' : '+'}${fmt.format(transaction.amount)}',
           style: TextStyle(
             color: isExpense ? Colors.red.shade700 : Colors.green.shade700,
             fontWeight: FontWeight.bold,
-            fontSize: 15,
+            fontSize: 16,
           ),
         ),
       ),
     );
   }
-}
 
-// ─── ÉTAT VIDE ────────────────────────────────────────────────────────────────
+  void _showActions(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.copy),
+              title: Text(AppStrings.duplicate),
+              onTap: () {
+                Navigator.pop(ctx);
+                provider.duplicateTransaction(transaction);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.edit),
+              title: const Text('Modifier'),
+              onTap: () {
+                Navigator.pop(ctx);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) =>
+                        AddTransactionScreen(transaction: transaction),
+                  ),
+                );
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
 
 class _EmptyState extends StatelessWidget {
   const _EmptyState();
@@ -543,8 +693,6 @@ class _EmptyState extends StatelessWidget {
   }
 }
 
-// ─── BANNIÈRE PUB (simulée) ───────────────────────────────────────────────────
-
 class _AdBanner extends StatelessWidget {
   const _AdBanner();
 
@@ -553,10 +701,10 @@ class _AdBanner extends StatelessWidget {
     return Container(
       height: 50,
       color: Colors.grey.shade200,
-      child: const Center(
+      child: Center(
         child: Text(
-          '[ Publicité — Passez à la version Pro pour supprimer ]',
-          style: TextStyle(color: Colors.grey, fontSize: 12),
+          '[ Publicité — Pro supprime les pubs ]',
+          style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
         ),
       ),
     );

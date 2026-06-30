@@ -66,6 +66,7 @@ final List<Category> defaultCategories = [
     icon: '🛒',
     color: Colors.orange,
     isDefault: true,
+    monthlyBudget: 400,
   ),
   Category(
     id: 2,
@@ -73,6 +74,7 @@ final List<Category> defaultCategories = [
     icon: '🚗',
     color: Colors.blue,
     isDefault: true,
+    monthlyBudget: 150,
   ),
   Category(
     id: 3,
@@ -80,6 +82,7 @@ final List<Category> defaultCategories = [
     icon: '🏠',
     color: Colors.brown,
     isDefault: true,
+    monthlyBudget: 800,
   ),
   Category(
     id: 4,
@@ -87,6 +90,7 @@ final List<Category> defaultCategories = [
     icon: '🎮',
     color: Colors.purple,
     isDefault: true,
+    monthlyBudget: 120,
   ),
   Category(
     id: 5,
