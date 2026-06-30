@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io' show Platform;
 
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
@@ -20,6 +21,7 @@ import '../l10n/app_strings.dart';
 import 'recurring_transactions_screen.dart';
 import 'import_data_screen.dart';
 import 'scan_receipt_screen.dart';
+import 'about_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -253,17 +255,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   onTap: _setupPin,
                 ),
 
-              // ── WIDGET ───────────────────────────────────────────────────
-              _SectionHeader(title: 'Widget'),
-              ListTile(
-                leading: const Icon(Icons.widgets),
-                title: const Text('Widget écran d\'accueil'),
-                subtitle: const Text(
-                  'Ajoutez le widget sur votre écran d\'accueil Android',
+              // ── WIDGET (Android uniquement) ────────────────────────────────
+              if (Platform.isAndroid) ...[
+                _SectionHeader(title: 'Widget'),
+                ListTile(
+                  leading: const Icon(Icons.widgets),
+                  title: const Text('Widget écran d\'accueil'),
+                  subtitle: const Text(
+                    'Ajoutez le widget sur votre écran d\'accueil',
+                  ),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => _pinWidget(context),
                 ),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: () => _pinWidget(context),
-              ),
+              ],
 
               // ── EXPORT ────────────────────────────────────────────────────
               _SectionHeader(title: 'Export'),
@@ -365,6 +369,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 onTap: provider.isPro
                     ? () => _restore(context, provider)
                     : () => ProPurchaseHelper.requestUpgrade(context, provider),
+              ),
+
+              // ── INFORMATIONS ───────────────────────────────────────────────
+              _SectionHeader(title: 'Informations'),
+              ListTile(
+                leading: const Icon(Icons.info_outline),
+                title: const Text('À propos'),
+                subtitle: const Text(
+                  'Version, confidentialité, support',
+                ),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const AboutScreen()),
+                ),
               ),
 
               // ── DEBUG (dev uniquement) ─────────────────────────────────────
@@ -650,7 +669,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ).showSnackBar(const SnackBar(content: Text('Sauvegarde effectuée')));
       }
     } catch (e) {
-      if (context.mounted) _showError(context, 'Erreur lors de la sauvegarde');
+      if (context.mounted) {
+        _showError(
+          context,
+          'Sauvegarde annulée ou impossible. Choisissez « Enregistrer dans Fichiers ».',
+        );
+      }
     }
   }
 

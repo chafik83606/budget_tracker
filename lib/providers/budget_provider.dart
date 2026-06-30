@@ -10,6 +10,7 @@ import '../services/recurring_service.dart';
 import '../services/widget_service.dart';
 import '../services/auto_backup_service.dart';
 import '../services/notification_service.dart';
+import '../models/period_stats.dart';
 
 enum TransactionFilterType { all, expense, income }
 
@@ -441,5 +442,85 @@ class BudgetProvider extends ChangeNotifier {
 
   Future<List<Map<String, dynamic>>> getMonthlyTotals() async {
     return _db.getMonthlyTotals(months: 6);
+  }
+
+  (int, int) _previousMonth(int year, int month) {
+    if (month == 1) return (year - 1, 12);
+    return (year, month - 1);
+  }
+
+  Future<Map<int, double>> getExpensesByCategoryFor(int year, int month) async {
+    return _db.getExpensesByCategory(year: year, month: month);
+  }
+
+  Future<({double incomes, double expenses, double balance})> getPeriodTotals(
+    int year,
+    int month,
+  ) async {
+    final txs = await _db.getTransactions(
+      year: year,
+      month: month,
+      accountId: _currentAccountId,
+    );
+    double incomes = 0;
+    double expenses = 0;
+    for (final t in txs) {
+      if (t.type == TransactionType.expense) {
+        expenses += t.amount;
+      } else {
+        incomes += t.amount;
+      }
+    }
+    return (incomes: incomes, expenses: expenses, balance: incomes - expenses);
+  }
+
+  Future<PeriodOverview> getPeriodOverview(int year, int month) async {
+    final current = await getPeriodTotals(year, month);
+    final (prevY, prevM) = _previousMonth(year, month);
+    final prev = await getPeriodTotals(prevY, prevM);
+    final lastYear = await getPeriodTotals(year - 1, month);
+    return PeriodOverview(
+      year: year,
+      month: month,
+      incomes: current.incomes,
+      expenses: current.expenses,
+      balance: current.balance,
+      previousMonthExpenses: prev.expenses,
+      sameMonthLastYearExpenses: lastYear.expenses,
+      previousMonthBalance: prev.balance,
+      sameMonthLastYearBalance: lastYear.balance,
+    );
+  }
+
+  Future<List<CategoryComparison>> getCategoryComparisons(
+    int year,
+    int month,
+  ) async {
+    final current = await getExpensesByCategoryFor(year, month);
+    final (prevY, prevM) = _previousMonth(year, month);
+    final prev = await getExpensesByCategoryFor(prevY, prevM);
+    final lastYear = await getExpensesByCategoryFor(year - 1, month);
+
+    final comparisons = <CategoryComparison>[];
+    for (final cat in _categories) {
+      if (cat.id == null) continue;
+      final id = cat.id!;
+      final cur = current[id] ?? 0;
+      final p = prev[id] ?? 0;
+      final ly = lastYear[id] ?? 0;
+      if (cur == 0 && p == 0 && ly == 0) continue;
+      comparisons.add(
+        CategoryComparison(
+          categoryId: id,
+          name: cat.name,
+          icon: cat.icon,
+          current: cur,
+          previousMonth: p,
+          sameMonthLastYear: ly,
+        ),
+      );
+    }
+    comparisons.sort((a, b) => b.current.compareTo(a.current));
+    return comparisons;
   }
 }

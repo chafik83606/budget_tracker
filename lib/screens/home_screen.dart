@@ -87,7 +87,6 @@ class _HomeScreenState extends State<HomeScreen> {
             children: [
               _BalanceHeader(provider: provider),
               _SavingsGoalCard(provider: provider),
-              _CategorySummary(provider: provider),
               _MonthNavigator(provider: provider),
               Expanded(
                 child: RefreshIndicator(
@@ -115,8 +114,15 @@ class _HomeScreenState extends State<HomeScreen> {
           floatingActionButton: FloatingActionButton.extended(
             onPressed: () => showAddBottomSheet(context, provider),
             backgroundColor: AppConfig.seedColor,
-            icon: const Icon(Icons.add),
-            label: Text(AppStrings.add),
+            foregroundColor: Colors.white,
+            icon: const Icon(Icons.add, color: Colors.white),
+            label: Text(
+              AppStrings.add,
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
           ),
         );
       },
@@ -338,112 +344,6 @@ class _SavingsGoalCard extends StatelessWidget {
             },
             child: const Text('Enregistrer'),
           ),
-        ],
-      ),
-    );
-  }
-}
-
-class _CategorySummary extends StatefulWidget {
-  final BudgetProvider provider;
-  const _CategorySummary({required this.provider});
-
-  @override
-  State<_CategorySummary> createState() => _CategorySummaryState();
-}
-
-class _CategorySummaryState extends State<_CategorySummary> {
-  Map<int, double>? _expenses;
-
-  @override
-  void initState() {
-    super.initState();
-    _load();
-  }
-
-  @override
-  void didUpdateWidget(_CategorySummary oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.provider.currentMonth != widget.provider.currentMonth ||
-        oldWidget.provider.currentYear != widget.provider.currentYear) {
-      _load();
-    }
-  }
-
-  Future<void> _load() async {
-    final data = await widget.provider.getCategoryExpensesSummary();
-    if (mounted) setState(() => _expenses = data);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final expenses = _expenses;
-    if (expenses == null || expenses.isEmpty) return const SizedBox.shrink();
-
-    final withBudget = widget.provider.categories
-        .where((c) => c.monthlyBudget != null && c.monthlyBudget! > 0)
-        .where((c) => expenses.containsKey(c.id))
-        .take(4)
-        .toList();
-
-    if (withBudget.isEmpty) return const SizedBox.shrink();
-    final fmt = NumberFormat.currency(locale: 'fr_FR', symbol: '€');
-
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            AppStrings.categoriesSummary,
-            style: TextStyle(
-              fontWeight: FontWeight.w600,
-              color: Colors.grey.shade700,
-              fontSize: 13,
-            ),
-          ),
-          const SizedBox(height: 8),
-          ...withBudget.map((cat) {
-            final spent = expenses[cat.id!] ?? 0;
-            final budget = cat.monthlyBudget!;
-            final ratio = (spent / budget).clamp(0.0, 1.0);
-            final over = spent > budget;
-            return Padding(
-              padding: const EdgeInsets.only(bottom: 6),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Text(cat.icon, style: const TextStyle(fontSize: 14)),
-                      const SizedBox(width: 6),
-                      Expanded(
-                        child: Text(
-                          cat.name,
-                          style: const TextStyle(fontSize: 12),
-                        ),
-                      ),
-                      Text(
-                        '${fmt.format(spent)} / ${fmt.format(budget)}',
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: over ? Colors.red : Colors.grey.shade600,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 2),
-                  LinearProgressIndicator(
-                    value: ratio,
-                    minHeight: 4,
-                    backgroundColor: Colors.grey.shade200,
-                    color: over ? Colors.red : cat.color,
-                  ),
-                ],
-              ),
-            );
-          }),
         ],
       ),
     );

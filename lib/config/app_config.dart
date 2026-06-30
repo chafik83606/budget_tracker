@@ -9,6 +9,12 @@ class AppConfig {
   static const String proProductId = 'budget_tracker_pro';
   static const Color seedColor = Color(0xFF2E7D32);
 
+  static const String appDisplayName = 'Budget Tracker';
+  static const String publisherName = 'Dynaweb';
+  static const String privacyPolicyUrl =
+      'https://chafik83606.github.io/budgetraker/';
+  static const String supportEmail = 'direction@novasoft.solutions';
+
   // IDs production — remplacer avant publication Play Store / App Store.
   static const String _prodAdmobAndroidAppId =
       'ca-app-pub-XXXXXXXXXXXXXXXX~YYYYYYYYYY';
